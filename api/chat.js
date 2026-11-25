@@ -212,12 +212,12 @@ async function callGemini(messages) {
   return j.choices?.[0]?.message?.content || "";
 }
 
-async function callFree(messages) {
+async function callFreeOnce(messages, model, timeoutMs) {
   const r = await fetch("https://text.pollinations.ai/", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ messages, model: "openai", private: true }),
-    signal: AbortSignal.timeout(45000),
+    body: JSON.stringify({ messages, model, private: true }),
+    signal: AbortSignal.timeout(timeoutMs),
   });
   if (!r.ok) throw new Error("Free provider " + r.status);
   const text = await r.text();
@@ -226,6 +226,17 @@ async function callFree(messages) {
     return j.choices?.[0]?.message?.content || text;
   } catch {
     return text;
+  }
+}
+  
+async function callFree(messages) {
+ // The free provider rate-limits in bursts (HTTP 402/429). Retry once on a
+    // different model pool after a short pause before giving up.
+    try {
+      return await callFreeOnce(messages, "openai", 30000);
+    } catch (e) {
+      await new Promise((r) => setTimeout(r, 2000));
+      return await callFreeOnce(messages, "openai-fast", 20000);
   }
 }
 
